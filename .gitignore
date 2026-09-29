@@ -1,0 +1,38 @@
+# Environment / credentials
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Excel lock files
+~$*
+
+# Agent / AI local files
+.gemini/
+brain/
+artifacts/
+.agent/logs/
+.agent/tmp/
+
+# Scratch / temp output
+scratch_*.py
+scratch_*.json
+output.json
+output.txt
+
+# Work Log & Memory (internal session logs — see .agent/rules/worklog_memory_rules.md)
+practices/worklog/*
+!practices/worklog/.gitkeep
