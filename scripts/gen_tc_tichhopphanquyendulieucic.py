@@ -1,0 +1,767 @@
+# -*- coding: utf-8 -*-
+"""
+gen_tc_tichhopphanquyendulieucic.py
+===================================
+Generate Excel test cases — Tích hợp Phân quyền dữ liệu tài khoản (Confluence 16911348)
+với các chức năng IV.2.3.7 (Người dùng trong CIC) và các màn áp dụng phân quyền dữ liệu.
+
+4 modules: M1 Luồng vào | M2 Phiên & hiển thị | M3 Hiệu lực trên màn Tệp | M4 Vòng đời liên chức năng
+Traceability: practices/testcases/CIC/TichHopPhanQuyenDuLieuCIC_B3_B4.md (SC-xx / BR-xx)
+Q&A: practices/Q&A/PhanQuyenDuLieuCIC_QA.md
+
+Run:
+    cd <repo root>
+    python scripts/gen_tc_tichhopphanquyendulieucic.py
+"""
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+from tc_excel_writer import section, subsection, tc, tc_group, tc_sub, tc_item, FeatureSpec, generate_excel
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT_PATH = os.path.join(REPO_ROOT, "practices", "testcases", "CIC", "TichHopPhanQuyenDuLieuCIC_TestCases.xlsx")
+
+SEC_UI = "Giao diện (Phần này viết các trường hợp kiểm thử cho giao diện chung và các giao diện cho các control)"
+SEC_BIZ = ("Chức năng (Phần này viết các trường hợp kiểm thử kiểm tra các ràng buộc trong cơ sở dữ liệu và cho các "
+           "luồng nghiệp vụ trong tài liệu giải pháp, tích hợp với các chức năng khác)")
+
+LOGOUT_MSG = "Đã có thông tin quyền dữ liệu được cập nhật. Vui lòng đăng nhập lại"
+
+
+def pending(q_id: str, topic: str) -> str:
+    """Expected result placeholder for scenarios blocked by an unanswered ⚠️ Q&A item."""
+    return (f"PENDING-Q&A {q_id}: chưa xác định kết quả mong muốn — {topic}. "
+            f"Chờ BA/PO trả lời {q_id} trong practices/Q&A/PhanQuyenDuLieuCIC_QA.md rồi cập nhật TC.")
+
+
+PRECOND_BASE = (
+    "Pre-condition:\n"
+    "- Hệ thống Core CIC; dữ liệu test dựng sẵn (xem file B3_B4 mục 'Dữ liệu test chuẩn bị'):\n"
+    "  + Phòng TT XLDL: lp.ttxldl (Trưởng phòng, Vai trò Lãnh đạo phòng, có quyền chức năng Phân quyền); "
+    "cb.a - Nguyễn Văn A, cb.b - Trần Thị B (Hoạt động, Vai trò Cán bộ); cb.c (Không hoạt động); "
+    "cb.d (Chờ lãnh đạo duyệt); cb.e (Tạo mới); cb.f (Chờ lãnh đạo duyệt hết hiệu lực); cb.g (Chờ lãnh đạo duyệt hiệu lực)\n"
+    "  + Phòng XHTD: lp.xhtd (Lãnh đạo phòng), cb.x - Lê Văn X (Hoạt động, Cán bộ)\n"
+    "  + Phòng VHAN: vh.qt (Cán bộ); BLĐ: ld.dv (Lãnh đạo đơn vị); Quản trị CIC mức 1: qt.m1; mức 2: qt.m2\n"
+    "  + TCTD (NV16): 201, 303, 310 (đầu mối 3 số); 79201019, 79201012, 79201017 (ORG_REPORTING_CODE = 201); "
+    "01201500, 01203500 (ORG_REPORTING_CODE 8 số, tự báo cáo)\n"
+    "- Mật khẩu tài khoản test: [ĐÃ ẨN — lấy từ quản trị môi trường test]\n"
+)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# M1 — Luồng vào: điều kiện mở & dữ liệu nguồn
+# ══════════════════════════════════════════════════════════════════════════════
+PRECOND_M1 = PRECOND_BASE + "- Điều hướng: Quản trị hệ thống → Quản lý người dùng → QL người dùng trong CIC (Tra cứu người dùng)\n"
+
+ROWS_M1 = [
+    section(SEC_UI),
+
+    subsection("Kiểm tra button Phân quyền"),
+    tc("PQDLTH_001 - hiển thị nút Phân quyền ở menu Thao tác của tài khoản Hoạt động",
+       "Kiểm tra hiển thị nút Phân quyền",
+       "Người thao tác: lp.ttxldl\nTài khoản: cb.a (Hoạt động)",
+       "1. Đăng nhập lp.ttxldl\n2. Tra cứu người dùng, Tên tài khoản = cb.a, bấm Tìm kiếm\n3. Mở menu Thao tác của dòng cb.a",
+       "3. Menu Thao tác hiển thị đủ các nút theo ma trận trạng thái Hoạt động: Xem, Cập nhật, Hết hiệu lực, Phân quyền, Điều chuyển; nhãn \"Phân quyền\" đúng chính tả",
+       "Cao"),
+    tc("PQDLTH_002 - trạng thái nút Phân quyền với tài khoản Hoạt động",
+       "Kiểm tra trạng thái enable/disable của nút Phân quyền",
+       "Người thao tác: lp.ttxldl\nTài khoản: cb.a (Hoạt động)",
+       "1. Thực hiện bước 1–3 của PQDLTH_001\n2. Quan sát nút Phân quyền",
+       "2. Nút Phân quyền ở trạng thái Enable, cho phép click",
+       "Cao"),
+    tc("PQDLTH_003 - onclick nút Phân quyền mở đúng màn Thông tin phân quyền dữ liệu của tài khoản đã chọn",
+       "Kiểm tra click nút Phân quyền",
+       "Người thao tác: lp.ttxldl\nTài khoản: cb.a - Nguyễn Văn A",
+       "1. Thực hiện bước 1–3 của PQDLTH_001\n2. Click Phân quyền",
+       "2. Mở màn 1. Thông tin phân quyền dữ liệu; khu vực Thông tin người dùng hiển thị Tên tài khoản = cb.a, Họ và tên = Nguyễn Văn A (không phải tài khoản khác hoặc tài khoản đang đăng nhập)",
+       "Cao"),
+
+    section(SEC_BIZ),
+
+    subsection("Kiểm tra mở chức năng Phân quyền thành công"),
+    tc("PQDLTH_004 - tài khoản vừa được phê duyệt chuyển Hoạt động xuất hiện nút Phân quyền",
+       "Tài khoản chuyển từ Chờ lãnh đạo duyệt sang Hoạt động",
+       "Tài khoản: cb.d (Chờ lãnh đạo duyệt)\nNgười phê duyệt: qt.m2\nNgười phân quyền: lp.ttxldl",
+       "1. Đăng nhập lp.ttxldl, tra cứu cb.d, mở menu Thao tác\n2. Đăng nhập qt.m2, Phê duyệt cb.d, nhập Lý do \"Duyệt tài khoản test\", Xác nhận\n3. Đăng nhập lại lp.ttxldl, tra cứu cb.d, mở menu Thao tác",
+       "1. Menu chỉ có Xem, Phê duyệt; không có Phân quyền\n2. cb.d chuyển trạng thái Hoạt động\n3. Menu có nút Phân quyền; click mở được màn Thông tin phân quyền dữ liệu của cb.d",
+       "Cao"),
+    tc("PQDLTH_005 - lãnh đạo phòng phân quyền dữ liệu cho cán bộ cùng phòng thành công",
+       "Lãnh đạo phòng TT XLDL phân quyền cho cb.a",
+       "Người thao tác: lp.ttxldl\nTài khoản: cb.a (chưa có nhóm quyền dữ liệu)\nNhóm mới: Theo đầu mối 201; chức năng Tiếp nhận dữ liệu (Tìm kiếm, Tiếp nhận)",
+       "1. Mở Phân quyền của cb.a\n2. Bấm Thêm nhóm quyền dữ liệu → Cập nhật TCTD & quyền\n3. Chọn Theo đầu mối TCTD, chọn 201, Tìm kiếm, tích 201, Lựa chọn\n4. Chọn Phân hệ, chức năng Tiếp nhận dữ liệu, tích Tìm kiếm + Tiếp nhận, Lựa chọn, Lưu\n5. Bấm Lưu màn 1",
+       "4. Quay lại màn 1, khối mới có 201 - Theo đầu mối và cây chức năng đã chọn\n5. Lưu thành công vào CSDL, quay lại Tra cứu người dùng; dòng cb.a hiển thị chip \"201 - Theo đầu mối\"",
+       "Cao"),
+
+    subsection("Kiểm tra mở chức năng Phân quyền không thành công"),
+    tc_group("không hiển thị nút Phân quyền khi tài khoản không ở trạng thái Hoạt động", [
+        tc_sub("Tài khoản ở trạng thái khác Hoạt động", [
+            tc_item("cb.e — Tạo mới",
+                    "1. Đăng nhập lp.ttxldl\n2. Tra cứu cb.e, mở menu Thao tác",
+                    "2. Menu có Xem, Cập nhật, Gửi duyệt; không có nút Phân quyền", "Cao"),
+            tc_item("cb.d — Chờ lãnh đạo duyệt",
+                    "1. Đăng nhập lp.ttxldl\n2. Tra cứu cb.d, mở menu Thao tác",
+                    "2. Menu có Xem, Phê duyệt; không có nút Phân quyền", "Cao"),
+            tc_item("cb.f — Chờ lãnh đạo duyệt hết hiệu lực",
+                    "1. Đăng nhập lp.ttxldl\n2. Tra cứu cb.f, mở menu Thao tác",
+                    "2. Menu có Xem, Phê duyệt; không có nút Phân quyền", "Cao"),
+            tc_item("cb.g — Chờ lãnh đạo duyệt hiệu lực",
+                    "1. Đăng nhập lp.ttxldl\n2. Tra cứu cb.g, mở menu Thao tác",
+                    "2. Menu có Xem, Phê duyệt; không có nút Phân quyền", "Cao"),
+            tc_item("cb.c — Không hoạt động",
+                    "1. Đăng nhập lp.ttxldl\n2. Tra cứu cb.c, mở menu Thao tác",
+                    "2. Menu có Xem, Cập nhật, Hiệu lực; không có nút Phân quyền", "Cao"),
+        ]),
+    ]),
+
+    subsection("Kiểm tra phân quyền"),
+    tc_group("tập tài khoản người thao tác nhìn thấy để mở Phân quyền theo vai trò", [
+        tc_sub("Người thao tác theo vai trò/phòng ban", [
+            tc_item("lp.ttxldl — Lãnh đạo phòng TT XLDL",
+                    "1. Đăng nhập lp.ttxldl\n2. Tra cứu người dùng, không nhập điều kiện, bấm Tìm kiếm",
+                    "2. Danh sách chỉ gồm tài khoản phòng TT XLDL (lp.ttxldl, cb.a, cb.b, cb.c…); không có cb.x (XHTD) → không thể mở Phân quyền cho cb.x", "Cao"),
+            tc_item("cb.a — Cán bộ",
+                    "1. Đăng nhập cb.a\n2. Tra cứu người dùng, bấm Tìm kiếm",
+                    "2. Danh sách chỉ có 1 dòng cb.a", "Cao"),
+            tc_item("vh.qt — Cán bộ phòng VHAN",
+                    "1. Đăng nhập vh.qt\n2. Tra cứu người dùng, bấm Tìm kiếm",
+                    "2. Danh sách gồm tài khoản mọi phòng ban (có cả cb.a và cb.x)", "Cao"),
+            tc_item("ld.dv — Lãnh đạo đơn vị (BLĐ)",
+                    "1. Đăng nhập ld.dv\n2. Tra cứu người dùng, bấm Tìm kiếm",
+                    "2. Danh sách gồm tài khoản mọi phòng ban (có cả cb.a và cb.x)", "Cao"),
+        ]),
+    ]),
+    tc("PQDLTH_015 - tài khoản phòng VHAN hoặc lãnh đạo đơn vị mở Phân quyền cho tài khoản phòng khác",
+       "vh.qt / ld.dv bấm Phân quyền cho cb.a",
+       "Người thao tác: vh.qt, ld.dv\nTài khoản: cb.a (Hoạt động, TT XLDL)",
+       "1. Đăng nhập vh.qt, tra cứu cb.a, mở menu Thao tác, click Phân quyền (nếu có)\n2. Lặp lại với ld.dv",
+       pending("Q15", "VHAN/Lãnh đạo đơn vị có được phân quyền dữ liệu cho tài khoản phòng khác không"),
+       "Cao"),
+    tc("PQDLTH_016 - lãnh đạo phòng tự phân quyền dữ liệu cho chính mình",
+       "lp.ttxldl mở Phân quyền của chính lp.ttxldl",
+       "Người thao tác: lp.ttxldl\nTài khoản: lp.ttxldl",
+       "1. Đăng nhập lp.ttxldl\n2. Tra cứu lp.ttxldl, mở menu Thao tác, click Phân quyền (nếu có)\n3. Thêm nhóm 303 - Theo đầu mối, Lưu",
+       pending("Q15", "có chặn tự phân quyền cho chính mình và có tự đăng xuất không"),
+       "Cao"),
+    tc("PQDLTH_017 - người không có quyền chức năng Phân quyền truy cập trực tiếp màn Phân quyền",
+       "cb.a truy cập URL màn Phân quyền của cb.b",
+       "Người thao tác: cb.a (không có quyền chức năng Phân quyền)\nURL: URL màn 1 của cb.b (sao chép từ phiên lp.ttxldl)",
+       "1. Đăng nhập cb.a\n2. Dán URL màn Thông tin phân quyền dữ liệu của cb.b vào trình duyệt",
+       pending("Q15", "hành vi khi truy cập trực tiếp (dự kiến trang 403 như IV Tiếp nhận dữ liệu, chưa được SRS 16911348 xác nhận)"),
+       "Cao"),
+
+    subsection("Kiểm tra dữ liệu nguồn nạp vào màn Phân quyền"),
+    tc("PQDLTH_018 - thông tin người dùng ở màn 1 khớp dữ liệu tài khoản",
+       "So khớp 15 trường Thông tin người dùng",
+       "Tài khoản: cb.a — Họ tên Nguyễn Văn A; Giới tính Nam; Email cb.a.test@cic.vn; SĐT 0900000001; Loại tài khoản Trong CIC; Phòng ban TT XLDL; Chức vụ Chuyên viên; Ngày ký HĐ 01/01/2026; Ngày hiệu lực 01/01/2026; Nhóm người dùng NND_TiepNhan",
+       "1. Mở Xem chi tiết cb.a, ghi lại giá trị các trường\n2. Mở Phân quyền của cb.a\n3. So sánh khu vực Thông tin người dùng",
+       "3. 15 trường (Họ và tên, Tên tài khoản, Giới tính, Email, SĐT, Loại tài khoản, Địa chỉ, Ghi chú, Phòng ban, Chức vụ, Ngày ký hợp đồng, Ngày hiệu lực, Ngày hết hiệu lực, Nhóm quyền, Nhóm người dùng) khớp 100% với Xem chi tiết; chỉ đọc, không cho sửa",
+       "Cao"),
+    tc("PQDLTH_019 - thông tin người dùng ở màn 1 cập nhật theo chức năng Cập nhật người dùng",
+       "Sửa Email và Chức vụ rồi mở lại Phân quyền",
+       "Tài khoản: cb.a\nEmail mới: cb.a.moi@cic.vn\nChức vụ mới: Phó trưởng phòng\nLý do cập nhật: Cập nhật thông tin test",
+       "1. Cập nhật người dùng cb.a với Email, Chức vụ mới, Lưu\n2. Mở Phân quyền của cb.a",
+       "1. Cập nhật thành công\n2. Màn 1 hiển thị Email = cb.a.moi@cic.vn, Chức vụ = Phó trưởng phòng; các nhóm quyền dữ liệu đã có không thay đổi",
+       "Trung bình"),
+    tc("PQDLTH_020 - cây chức năng lấy theo nhóm quyền của tài khoản được phân quyền",
+       "Người thao tác có nhiều chức năng hơn tài khoản được phân quyền",
+       "Người thao tác: lp.ttxldl (có cả chức năng Quản lý người dùng, Phân quyền)\nTài khoản: cb.a — Nhóm người dùng NND_TiepNhan chỉ có chức năng Tiếp nhận dữ liệu",
+       "1. Mở Phân quyền của cb.a → Cập nhật TCTD & quyền\n2. Chọn lần lượt từng Phân hệ, mở danh sách Chức năng và cây chức năng",
+       "2. Chỉ hiển thị chức năng thuộc Nhóm quyền của NND_TiepNhan (Tiếp nhận dữ liệu); không hiển thị Quản lý người dùng, Phân quyền của lp.ttxldl",
+       "Cao"),
+    tc("PQDLTH_021 - cây chức năng thay đổi khi đổi nhóm người dùng của tài khoản",
+       "Thêm Nhóm người dùng cho cb.a rồi mở lại màn 2",
+       "Tài khoản: cb.a\nNhóm người dùng thêm: NND_KiemTraNoiDung (chức năng Kiểm tra nội dung tệp báo cáo)",
+       "1. Cập nhật người dùng cb.a, thêm NND_KiemTraNoiDung, Lưu\n2. Mở Phân quyền cb.a → Cập nhật TCTD & quyền, mở cây chức năng",
+       "2. Cây chức năng có thêm Kiểm tra nội dung tệp báo cáo cùng các hành động; các chức năng cũ vẫn còn",
+       "Trung bình"),
+    tc("PQDLTH_022 - danh sách phân hệ lấy từ quản lý chức năng và không có Web Portal",
+       "Mở dropdown Phân hệ",
+       "Tài khoản: cb.a",
+       "1. Mở Phân quyền cb.a → Cập nhật TCTD & quyền\n2. Mở dropdown Phân hệ",
+       "2. Hiển thị đúng 4 phân hệ chức năng level 1 đang khai báo tại Quản lý chức năng; không có Web Portal; chỉ chọn được 1 giá trị",
+       "Trung bình"),
+    tc_group("danh sách tổ chức tín dụng theo từng chế độ phân quyền lấy từ danh mục NV16", [
+        tc_sub("Theo đầu mối TCTD", [
+            tc_item("Chế độ: Theo đầu mối TCTD; ô TCTD để trống",
+                    "1. Màn 2, chọn Theo đầu mối TCTD\n2. Bấm Tìm kiếm",
+                    "2. Danh sách chỉ gồm TCTD mã 3 số (201, 303, 310); không có 79201019, 01201500", "Cao"),
+        ]),
+        tc_sub("Theo chi nhánh TCTD", [
+            tc_item("Chế độ: Theo chi nhánh TCTD; ô TCTD để trống",
+                    "1. Màn 2, chọn Theo chi nhánh TCTD\n2. Bấm Tìm kiếm",
+                    "2. Danh sách chỉ gồm tổ chức có ORG_REPORTING_CODE 8 số (01201500, 01203500); không có 79201019 (ORG_REPORTING_CODE = 201) [Assumption Q20-A]", "Cao"),
+        ]),
+        tc_sub("Theo tất cả TCTD", [
+            tc_item("Chế độ: Theo tất cả TCTD; ô TCTD để trống",
+                    "1. Màn 2, chọn Theo tất cả TCTD\n2. Bấm Tìm kiếm",
+                    "2. Danh sách gồm toàn bộ TCTD NV16 (201, 303, 310, 79201019, 79201012, 79201017, 01201500, 01203500); chọn 201 → sang danh sách phải với Phân loại quản lý = Theo chi nhánh", "Cao"),
+        ]),
+    ]),
+    tc("PQDLTH_026 - không lưu được nhóm quyền khi tổ chức tín dụng không còn kích hoạt",
+       "TCTD bị hủy kích hoạt sau khi chọn và trước khi Lưu",
+       "Tài khoản: cb.a\nTCTD: 310 (đang Kích hoạt lúc chọn)",
+       "1. Màn 2, Theo đầu mối, chọn 310 sang danh sách phải, chọn chức năng\n2. Quản trị danh mục hủy kích hoạt 310 trong NV16\n3. Quay lại màn 2 bấm Lưu",
+       "3. Hệ thống kiểm tra thông tin phân quyền, chặn Lưu và hiển thị thông báo lỗi về trạng thái TCTD 310 (SRS chưa có mã lỗi — [Assumption Q11-A, Q13-A]); nhóm không được ghi",
+       "Cao"),
+    tc("PQDLTH_027 - danh sách chọn không hiển thị tổ chức tín dụng đã hủy kích hoạt",
+       "TCTD Hủy kích hoạt không có trong kết quả tìm kiếm",
+       "TCTD: 310 (Hủy kích hoạt trong NV16)",
+       "1. Màn 2, Theo đầu mối TCTD, nhập 310, bấm Tìm kiếm",
+       "1. Không hiển thị 310; thông báo \"Không tìm thấy bản ghi phù hợp\" [Assumption Q11-A]",
+       "Trung bình"),
+    tc_group("danh sách tài khoản nhận khi sao chép quyền dữ liệu", [
+        tc_sub("Phân lớp tài khoản theo điều kiện của SRS", [
+            tc_item("cb.b — Hoạt động, cùng phòng TT XLDL",
+                    "1. Mở Phân quyền cb.a, bấm Sao chép quyền dữ liệu ở nhóm đã lưu\n2. Mở dropdown Chọn tài khoản nhận",
+                    "2. Có cb.b", "Cao"),
+            tc_item("cb.x — Hoạt động, khác phòng (XHTD)",
+                    "1. Như trên\n2. Gõ \"cb.x\" vào ô tìm kiếm",
+                    "2. Không có cb.x", "Cao"),
+            tc_item("cb.c — Không hoạt động, cùng phòng",
+                    "1. Như trên\n2. Gõ \"cb.c\"",
+                    "2. Không có cb.c", "Cao"),
+            tc_item("cb.a — tài khoản nguồn",
+                    "1. Như trên\n2. Gõ \"cb.a\"",
+                    "2. Không có cb.a", "Cao"),
+            tc_item("cb.d — Chờ lãnh đạo duyệt, cùng phòng",
+                    "1. Như trên\n2. Gõ \"cb.d\"",
+                    "2. Không có cb.d (không ở trạng thái Đang hoạt động)", "Cao"),
+        ]),
+    ]),
+    tc("PQDLTH_033 - định dạng hiển thị tài khoản nhận",
+       "Tài khoản nhận hiển thị theo cấu trúc Tài khoản - Họ & tên",
+       "Tài khoản nhận: cb.b - Trần Thị B",
+       "1. Mở dropdown Chọn tài khoản nhận",
+       "1. Option hiển thị \"cb.b - Trần Thị B\"",
+       "Thấp"),
+    tc("PQDLTH_034 - tài khoản cùng phòng đang chờ hiệu lực điều chuyển đi vẫn là tài khoản nhận",
+       "cb.b có yêu cầu điều chuyển sang XHTD trạng thái Chờ hiệu lực",
+       "cb.b: yêu cầu điều chuyển sang XHTD, Ngày hiệu lực = ngày hiện tại + 5 (VD 05/10/2026), trạng thái Chờ hiệu lực",
+       "1. Mở Phân quyền cb.a → Sao chép quyền dữ liệu\n2. Mở dropdown Chọn tài khoản nhận",
+       "2. Có cb.b (xét theo Phòng ban hiện hành TT XLDL, chưa tính điều chuyển chưa tới Ngày hiệu lực)",
+       "Trung bình"),
+    tc("PQDLTH_035 - tài khoản sắp điều chuyển đến chưa phải tài khoản nhận",
+       "cb.x có yêu cầu điều chuyển từ XHTD sang TT XLDL chưa tới Ngày hiệu lực",
+       "cb.x: yêu cầu điều chuyển sang TT XLDL, Ngày hiệu lực = ngày hiện tại + 5, trạng thái Chờ hiệu lực",
+       "1. Mở Phân quyền cb.a → Sao chép quyền dữ liệu\n2. Gõ \"cb.x\" trong Chọn tài khoản nhận",
+       "2. Không có cb.x",
+       "Trung bình"),
+    tc("PQDLTH_036 - danh sách tài khoản nhận theo phòng ban mới sau khi cập nhật người dùng",
+       "Đổi Phòng ban của cb.x sang TT XLDL bằng Cập nhật người dùng",
+       "cb.x: Phòng ban XHTD → TT XLDL\nLý do cập nhật: Đổi phòng test",
+       "1. Cập nhật người dùng cb.x, Phòng ban = TT XLDL, Lưu\n2. Mở Phân quyền cb.a → Sao chép quyền dữ liệu, gõ \"cb.x\"",
+       "2. Có cb.x trong danh sách tài khoản nhận",
+       "Trung bình"),
+]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# M2 — Luồng ra: phiên & hiển thị ở quản lý người dùng
+# ══════════════════════════════════════════════════════════════════════════════
+PRECOND_M2 = PRECOND_BASE + (
+    "- Người thao tác: lp.ttxldl\n"
+    "- cb.a có sẵn nhóm quyền N1 = {201 - Theo đầu mối, 303 - Theo đầu mối; Tiếp nhận dữ liệu: Tìm kiếm, Tiếp nhận}\n"
+    "- cb.b chưa có nhóm quyền dữ liệu (trừ khi TC nêu khác)\n"
+)
+
+ROWS_M2 = [
+    section(SEC_BIZ),
+
+    subsection("Kiểm tra đăng xuất tài khoản bị ảnh hưởng thành công"),
+    tc("PQDLTH_037 - đăng xuất toàn bộ phiên khi thêm nhóm quyền dữ liệu",
+       "cb.a đang đăng nhập trên 2 trình duyệt",
+       "cb.a đăng nhập Chrome và Edge\nNhóm thêm: 310 - Theo đầu mối; Tiếp nhận dữ liệu: Tìm kiếm",
+       "1. cb.a đăng nhập Chrome, mở Tiếp nhận dữ liệu; đăng nhập Edge, mở Dashboard\n2. lp.ttxldl thêm nhóm 310 cho cb.a, Lưu màn 2, Lưu màn 1\n3. Trên Chrome và Edge của cb.a thao tác bất kỳ (bấm Tìm kiếm / chuyển menu)",
+       f"3. Cả 2 phiên bị đăng xuất, về màn Đăng nhập, hiển thị thông báo \"{LOGOUT_MSG}\"",
+       "Cao"),
+    tc("PQDLTH_038 - đăng xuất khi sửa nhóm quyền dữ liệu",
+       "Thêm TCTD vào nhóm N1",
+       "Sửa N1: thêm 310 - Theo đầu mối",
+       "1. cb.a đăng nhập Chrome\n2. lp.ttxldl mở N1 → Cập nhật TCTD & quyền, thêm 310, Lưu, Lưu màn 1\n3. cb.a thao tác trên Chrome",
+       f"3. cb.a bị đăng xuất, thông báo \"{LOGOUT_MSG}\"",
+       "Cao"),
+    tc("PQDLTH_039 - đăng xuất khi xóa nhóm quyền dữ liệu",
+       "Xóa nhóm N1 rồi Lưu màn 1",
+       "Nhóm xóa: N1",
+       "1. cb.a đăng nhập Chrome\n2. lp.ttxldl bấm Xóa quyền dữ liệu ở N1, Xác nhận ở popup, Lưu màn 1\n3. cb.a thao tác trên Chrome",
+       f"3. cb.a bị đăng xuất, thông báo \"{LOGOUT_MSG}\"",
+       "Cao"),
+    tc("PQDLTH_040 - đăng nhập lại sau khi bị đăng xuất do thay đổi quyền",
+       "Phiên mới nhận quyền mới, không lặp lại thông báo",
+       "Sau PQDLTH_038",
+       "1. cb.a đăng nhập lại\n2. Mở Tiếp nhận dữ liệu có cấu trúc xác định, mở bộ lọc Mã đầu mối",
+       "1. Đăng nhập thành công, không hiển thị lại thông báo đăng xuất\n2. Bộ lọc có 201, 303, 310",
+       "Trung bình"),
+
+    subsection("Kiểm tra không đăng xuất khi không ghi thay đổi"),
+    tc("PQDLTH_041 - lưu màn 1 khi không có thay đổi không đăng xuất tài khoản",
+       "Mở Phân quyền rồi Lưu ngay",
+       "cb.a đăng nhập Chrome",
+       "1. lp.ttxldl mở Phân quyền cb.a, không thay đổi, bấm Lưu màn 1\n2. cb.a thao tác trên Chrome",
+       "2. cb.a vẫn đăng nhập bình thường, không có thông báo",
+       "Cao"),
+    tc("PQDLTH_042 - hủy màn 1 sau khi sửa nhóm không ghi dữ liệu và không đăng xuất",
+       "Sửa N1 ở màn 2, Lưu màn 2, Hủy màn 1",
+       "Sửa N1: thêm 310",
+       "1. lp.ttxldl mở N1 → thêm 310 → Lưu màn 2\n2. Bấm Hủy màn 1\n3. Tra cứu cb.a; cb.a thao tác trên Chrome",
+       "2. Quay lại Tra cứu người dùng\n3. Chip của cb.a vẫn là 201, 303 (không có 310); cb.a không bị đăng xuất [Assumption Q06-A]",
+       "Cao"),
+    tc("PQDLTH_043 - hủy màn 1 sau khi xóa nhóm giữ nguyên nhóm",
+       "Xóa N1 ở màn 4, Hủy màn 1",
+       "Nhóm: N1",
+       "1. lp.ttxldl Xóa quyền dữ liệu N1, Xác nhận\n2. Bấm Hủy màn 1\n3. Mở lại Phân quyền cb.a",
+       "3. N1 vẫn còn; cb.a không bị đăng xuất [Assumption Q06-A]",
+       "Cao"),
+    tc("PQDLTH_044 - thay đổi quyền của một tài khoản không đăng xuất tài khoản khác",
+       "cb.b đang đăng nhập khi phân quyền cho cb.a",
+       "cb.b đăng nhập Edge",
+       "1. lp.ttxldl thêm 310 vào N1 của cb.a, Lưu màn 1\n2. cb.b thao tác trên Edge",
+       "2. cb.b vẫn đăng nhập bình thường",
+       "Trung bình"),
+
+    subsection("Kiểm tra chuyển quyền dữ liệu thành công"),
+    tc("PQDLTH_045 - sao chép quyền dữ liệu chuyển nhóm sang tài khoản nhận và đăng xuất tài khoản nhận",
+       "Chuyển N1 từ cb.a sang cb.b",
+       "Nguồn: cb.a (N1)\nNhận: cb.b (đang đăng nhập Edge, chưa có nhóm)",
+       "1. lp.ttxldl mở Phân quyền cb.a, bấm Sao chép quyền dữ liệu ở N1\n2. Chọn tài khoản nhận cb.b - Trần Thị B, bấm Lưu\n3. cb.b thao tác trên Edge\n4. Mở Phân quyền cb.b (không Lưu màn 1 của cb.a)",
+       f"2. Quay lại màn 1 của cb.a\n3. cb.b bị đăng xuất, thông báo \"{LOGOUT_MSG}\"\n4. cb.b có nhóm 201 - Theo đầu mối, 303 - Theo đầu mối với cùng cây chức năng (ghi CSDL ngay khi Lưu màn 3) [Assumption Q06-A]",
+       "Cao"),
+    tc("PQDLTH_046 - nhóm đã chuyển bị xóa khỏi tài khoản nguồn",
+       "Kiểm tra cb.a sau khi chuyển N1",
+       "Sau PQDLTH_045",
+       "1. Mở Phân quyền cb.a\n2. Tra cứu người dùng cb.a, cb.b",
+       "1. cb.a không còn N1\n2. Cột Phân quyền dữ liệu của cb.a không còn chip 201, 303; cb.b hiển thị \"201 - Theo đầu mối\", \"303 - Theo đầu mối\"",
+       "Cao"),
+    tc("PQDLTH_047 - tài khoản nguồn có bị đăng xuất sau khi chuyển quyền",
+       "cb.a đang đăng nhập khi N1 bị chuyển đi",
+       "cb.a đăng nhập Chrome",
+       "1. Thực hiện PQDLTH_045\n2. cb.a thao tác trên Chrome",
+       pending("Q07", "tài khoản nguồn mất quyền nhưng SRS chỉ quy định đăng xuất tài khoản nhận"),
+       "Cao"),
+
+    subsection("Kiểm tra chuyển quyền dữ liệu không thành công"),
+    tc_group("chặn chuyển quyền khi trùng Mã TCTD - Loại quản lý với tài khoản nhận", [
+        tc_sub("Trùng với nhóm quyền của tài khoản nhận", [
+            tc_item("Trùng toàn bộ: N1 = {201 - Theo đầu mối}; cb.b có {201 - Theo đầu mối}",
+                    "1. Sao chép N1 của cb.a sang cb.b, Lưu",
+                    "1. Hiển thị ERR-005 \"Mã 201 - Theo đầu mối đã tồn tại. Vui lòng kiểm tra lại.\"; không chuyển", "Cao"),
+            tc_item("Trùng một phần: N1 = {201, 303, 310 - Theo đầu mối}; cb.b có {303 - Theo đầu mối}",
+                    "1. Sao chép N1 sang cb.b, Lưu",
+                    "1. Hiển thị ERR-005 cho Mã 303 - Theo đầu mối; chặn toàn bộ, 201 và 310 cũng không được ghi", "Cao"),
+            tc_item("Trùng nhiều cặp: N1 = {201, 303 - Theo đầu mối}; cb.b có {201, 303 - Theo đầu mối} ở 2 nhóm khác nhau",
+                    "1. Sao chép N1 sang cb.b, Lưu",
+                    "1. ERR-005 liệt kê đủ cả 2 cặp: Mã 201 - Theo đầu mối, Mã 303 - Theo đầu mối", "Cao"),
+        ]),
+    ]),
+    tc("PQDLTH_051 - dữ liệu hai tài khoản giữ nguyên khi chuyển quyền bị chặn",
+       "Sau trường hợp trùng một phần",
+       "Như item trùng một phần ở trên; cb.a và cb.b đều đang đăng nhập",
+       "1. Mở Phân quyền cb.a và cb.b\n2. cb.a, cb.b thao tác trên trình duyệt",
+       "1. cb.a vẫn có N1 {201, 303, 310}; cb.b vẫn chỉ có {303}\n2. Không tài khoản nào bị đăng xuất",
+       "Cao"),
+
+    subsection("Kiểm tra hiển thị phân quyền dữ liệu ở Tra cứu người dùng"),
+    tc_group("số chip phân quyền dữ liệu hiển thị trên mỗi dòng", [
+        tc_sub("Số bản ghi phân quyền dữ liệu của tài khoản", [
+            tc_item("3 bản ghi: 201, 303 - Theo đầu mối; 01201500 - Theo chi nhánh",
+                    "1. Tra cứu tài khoản, xem cột Phân quyền dữ liệu",
+                    "1. Hiển thị đủ 3 chip, không có chip +N", "Trung bình"),
+            tc_item("4 bản ghi: thêm 01203500 - Theo chi nhánh",
+                    "1. Tra cứu tài khoản",
+                    "1. Hiển thị 3 chip + chip \"+1\"", "Trung bình"),
+            tc_item("5 bản ghi: thêm 310 - Theo đầu mối",
+                    "1. Tra cứu tài khoản",
+                    "1. Hiển thị 3 chip + chip \"+2\"", "Trung bình"),
+        ]),
+    ]),
+    tc("PQDLTH_055 - thứ tự sắp xếp chip phân quyền dữ liệu",
+       "Ưu tiên Theo đầu mối, cùng loại thì mã tăng dần",
+       "Nhóm (nhập theo thứ tự): 01203500 - Theo chi nhánh; 303 - Theo đầu mối; 01201500 - Theo chi nhánh; 201 - Theo đầu mối",
+       "1. Lưu phân quyền cho cb.a theo thứ tự trên\n2. Tra cứu cb.a",
+       "2. Chip theo thứ tự: \"201 - Theo đầu mối\", \"303 - Theo đầu mối\", \"01201500 - Theo chi nhánh\", \"+1\"; không theo thứ tự nhập",
+       "Trung bình"),
+    tc("PQDLTH_056 - popover chip +N liệt kê đủ phân quyền dữ liệu",
+       "Hover và click chip +N",
+       "Tài khoản có 5 bản ghi (PQDLTH item 5 bản ghi)",
+       "1. Hover chip \"+2\"\n2. Click chip \"+2\"",
+       "1–2. Hiển thị tooltip/popover liệt kê đủ 5 phân quyền dữ liệu; không mở trang mới, không điều hướng",
+       "Thấp"),
+    tc_group("bộ lọc phân quyền dữ liệu khớp phân loại quản lý đã lưu", [
+        tc_sub("Điều kiện bộ lọc Loại quản lý / Tổ chức", [
+            tc_item("Loại quản lý = Theo đầu mối; Tổ chức = 201",
+                    "1. Thêm bộ lọc Phân quyền dữ liệu, chọn giá trị, Tìm kiếm",
+                    "1. Trả cb.a (có 201 - Theo đầu mối); không trả cb.b (có 201 - Theo chi nhánh)\nSQL đối soát: SELECT u.USER_NAME FROM <bảng quyền dữ liệu theo thiết kế DB> p JOIN <bảng người dùng> u ON … WHERE p.ORG_CODE = '201' AND p.MANAGEMENT_TYPE = 'Theo đầu mối'", "Cao"),
+            tc_item("Loại quản lý = Theo chi nhánh; Tổ chức = 201 (cb.b được gán qua Theo tất cả)",
+                    "1. Chọn giá trị, Tìm kiếm",
+                    "1. Trả cb.b; không trả cb.a (khớp Phân loại đã lưu, không suy lại từ ORG_REPORTING_CODE)", "Cao"),
+            tc_item("Không chọn Loại quản lý và Tổ chức",
+                    "1. Tìm kiếm",
+                    "1. Trả mọi tài khoản trong phạm vi, gồm cả tài khoản chưa có phân quyền dữ liệu (cb.x)", "Trung bình"),
+            tc_item("Không chọn Loại quản lý, mở dropdown Tổ chức",
+                    "1. Mở dropdown Tổ chức",
+                    "1. Tổ chức không trả giá trị", "Trung bình"),
+        ]),
+    ]),
+
+    subsection("Kiểm tra hiển thị ở Xem chi tiết và Phê duyệt người dùng"),
+    tc_group("danh sách TCTD đã chọn ở Xem chi tiết người dùng khớp sau mỗi thao tác", [
+        tc_sub("Thao tác ở chức năng Phân quyền", [
+            tc_item("Thêm nhóm 310 - Theo đầu mối, Lưu màn 1",
+                    "1. Mở Xem chi tiết cb.a",
+                    "1. Danh sách TCTD đã chọn có 310 (Mã, Tên, Phân loại quản lý = Theo đầu mối, Trạng thái)", "Trung bình"),
+            tc_item("Sửa nhóm: bỏ 303",
+                    "1. Mở Xem chi tiết cb.a",
+                    "1. Không còn 303", "Trung bình"),
+            tc_item("Xóa nhóm N1",
+                    "1. Mở Xem chi tiết cb.a",
+                    "1. Không còn 201, 303", "Trung bình"),
+            tc_item("Chuyển N1 sang cb.b",
+                    "1. Mở Xem chi tiết cb.a và cb.b",
+                    "1. cb.a không còn 201, 303; cb.b có 201, 303", "Trung bình"),
+        ]),
+    ]),
+    tc("PQDLTH_065 - lịch sử cập nhật ghi nhận mỗi lần lưu thay đổi phân quyền dữ liệu",
+       "Thêm 310 vào N1 rồi xem Lịch sử cập nhật",
+       "Sửa N1: thêm 310",
+       "1. lp.ttxldl thêm 310, Lưu màn 1\n2. Mở Xem chi tiết cb.a, mở Lịch sử cập nhật",
+       "2. Có 1 dòng mới: Thời gian = thời điểm Lưu, Người cập nhật = lp.ttxldl, Hành động = Chỉnh sửa, Giá trị cũ = 201 - Theo đầu mối, 303 - Theo đầu mối; Giá trị mới = thêm 310 - Theo đầu mối; Địa chỉ IP của lp.ttxldl [Assumption Q17-A]",
+       "Trung bình"),
+    tc("PQDLTH_066 - lịch sử cập nhật ghi nhận ở cả hai tài khoản khi chuyển quyền",
+       "Chuyển N1 từ cb.a sang cb.b",
+       "Sau PQDLTH_045",
+       "1. Mở Xem chi tiết cb.a, cb.b, mở Lịch sử cập nhật",
+       "1. Mỗi tài khoản có 1 dòng Hành động = Chỉnh sửa phản ánh nhóm bị chuyển đi / nhận về [Assumption Q17-A]",
+       "Trung bình"),
+    tc("PQDLTH_067 - màn phê duyệt hiển thị phân quyền dữ liệu theo mô hình phân quyền",
+       "Duyệt Hiệu lực lại tài khoản đã có nhóm quyền",
+       "cb.a có N1; cb.a đã Hết hiệu lực (Không hoạt động) rồi được yêu cầu Hiệu lực có phê duyệt (Chờ lãnh đạo duyệt hiệu lực)",
+       "1. qt.m1 mở màn Phê duyệt hiệu lực của cb.a\n2. Xem khu vực Phân quyền dữ liệu",
+       "2. Hiển thị 201, 303 với Phân loại quản lý = Theo đầu mối và chức năng Tiếp nhận dữ liệu (Tìm kiếm, Tiếp nhận) đúng như màn Phân quyền [Assumption Q16-A]",
+       "Trung bình"),
+]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# M3 — Luồng ra: hiệu lực trên màn áp dụng
+# ══════════════════════════════════════════════════════════════════════════════
+PRECOND_M3 = PRECOND_BASE + (
+    "- 4 màn Tệp: (1) Tiếp nhận dữ liệu có cấu trúc xác định, (2) Tiếp nhận dữ liệu có cấu trúc chưa xác định, "
+    "(3) Tiếp nhận tệp phi cấu trúc, (4) Danh sách kiểm tra nội dung tệp báo cáo\n"
+    "- Tệp mẫu (ngày báo cáo trong tháng hiện tại, Tệp D10 có Phòng phụ trách = TT XLDL): mỗi Mã đầu mối 201, 79201019, 79201012, 79201017, "
+    "01201500, 303, 310 có 1 tệp Chờ tiếp nhận và 1 tệp Đã tiếp nhận; VD D10201…, D1079201019…, D10303…\n"
+    "- cb.a có Nhóm người dùng NND_TiepNhan (quyền chức năng 4 màn Tệp); sau mỗi lần phân quyền cb.a đăng nhập lại\n"
+)
+
+ROWS_M3 = [
+    section(SEC_BIZ),
+
+    subsection("Kiểm tra hiệu lực quyền dữ liệu theo loại phân quyền"),
+    tc_group("phạm vi tệp hiển thị theo phân loại quản lý của nhóm quyền", [
+        tc_sub("Nhóm quyền: 201 - Theo đầu mối", [
+            tc_item("Màn (1), bộ lọc Mã đầu mối để trống",
+                    "1. cb.a đăng nhập, mở màn (1), bấm Tìm kiếm",
+                    "1. Hiển thị tệp của 201, 79201019, 79201012, 79201017; không có tệp 303, 310, 01201500 [Assumption Q22-A]", "Cao"),
+        ]),
+        tc_sub("Nhóm quyền: 01201500 - Theo chi nhánh", [
+            tc_item("Màn (1), bộ lọc Mã đầu mối để trống",
+                    "1. cb.a đăng nhập, mở màn (1), bấm Tìm kiếm",
+                    "1. Chỉ hiển thị tệp của 01201500", "Cao"),
+        ]),
+        tc_sub("Nhóm quyền: 201 - Theo chi nhánh (gán qua Theo tất cả)", [
+            tc_item("Màn (1), bộ lọc Mã đầu mối để trống",
+                    "1. cb.a đăng nhập, mở màn (1), bấm Tìm kiếm",
+                    "1. Chỉ hiển thị tệp của 201; không có 79201019, 79201012, 79201017 (không phủ chi nhánh con)", "Cao"),
+        ]),
+    ]),
+    tc_group("bộ lọc Mã đầu mối chỉ gồm tổ chức trong phạm vi quyền", [
+        tc_sub("cb.a có N1 = {201, 303 - Theo đầu mối}", [
+            tc_item("Màn (1) Tiếp nhận dữ liệu có cấu trúc xác định",
+                    "1. Mở dropdown Mã đầu mối",
+                    "1. Chỉ có đầu mối trong phạm vi 201, 303 (và đơn vị gửi báo cáo thuộc 201); không có 310, 01201500", "Cao"),
+            tc_item("Màn (2) Tiếp nhận dữ liệu có cấu trúc chưa xác định",
+                    "1. Mở dropdown Mã đầu mối",
+                    "1. Như màn (1)", "Cao"),
+            tc_item("Màn (3) Tiếp nhận tệp phi cấu trúc",
+                    "1. Mở dropdown Mã đầu mối",
+                    "1. Như màn (1)", "Cao"),
+            tc_item("Màn (4) Danh sách kiểm tra nội dung tệp báo cáo",
+                    "1. Mở dropdown Mã đầu mối",
+                    "1. Như màn (1)", "Cao"),
+        ]),
+    ]),
+    tc_group("không trả tệp ngoài phạm vi khi nhập thẳng tên tệp", [
+        tc_sub("cb.a có N1; nhập tên tệp của TCTD 310", [
+            tc_item("Màn (1): Tên tệp = D10310…(tên tệp mẫu của 310)",
+                    "1. Nhập Tên tệp, bấm Tìm kiếm",
+                    "1. \"Không tìm thấy bản ghi phù hợp\"", "Cao"),
+            tc_item("Màn (2): Tên tệp = tên tệp mẫu của 310",
+                    "1. Nhập Tên tệp, bấm Tìm kiếm",
+                    "1. \"Không tìm thấy bản ghi phù hợp\"", "Cao"),
+            tc_item("Màn (3): Tên tệp = tên tệp mẫu của 310",
+                    "1. Nhập Tên tệp, bấm Tìm kiếm",
+                    "1. \"Không tìm thấy bản ghi phù hợp\"", "Cao"),
+        ]),
+    ]),
+
+    subsection("Kiểm tra hiệu lực sau khi thay đổi phân quyền"),
+    tc("PQDLTH_078 - xóa nhóm quyền làm mất dữ liệu của các TCTD trong nhóm",
+       "cb.a có N1 và N2 = {310 - Theo đầu mối}; xóa N1",
+       "N1 = {201, 303 - Theo đầu mối}; N2 = {310 - Theo đầu mối}",
+       "1. lp.ttxldl xóa N1, Lưu màn 1\n2. cb.a đăng nhập lại, mở màn (1), mở bộ lọc Mã đầu mối, bấm Tìm kiếm",
+       "2. Bộ lọc chỉ còn 310; kết quả chỉ còn tệp 310",
+       "Cao"),
+    tc("PQDLTH_079 - thêm tổ chức vào nhóm quyền làm xuất hiện dữ liệu mới",
+       "Thêm 310 vào N1",
+       "N1 thêm 310 - Theo đầu mối",
+       "1. lp.ttxldl thêm 310 vào N1, Lưu màn 1\n2. cb.a đăng nhập lại, màn (1) bấm Tìm kiếm",
+       "2. Kết quả có thêm tệp của 310",
+       "Cao"),
+    tc("PQDLTH_080 - bỏ hành động Tiếp nhận làm ẩn nút Tiếp nhận",
+       "N1 chỉ còn hành động Tìm kiếm",
+       "N1: bỏ Tiếp nhận, giữ Tìm kiếm (cb.a không có nhóm nào khác)",
+       "1. lp.ttxldl bỏ tích Tiếp nhận ở cây chức năng N1, Lưu màn 2, Lưu màn 1\n2. cb.a đăng nhập lại, màn (1), chọn tệp Chờ tiếp nhận của 201",
+       "2. Vẫn thấy tệp của 201, 303; nút Tiếp nhận ẩn hoàn toàn",
+       "Cao"),
+    tc("PQDLTH_081 - tài khoản nhận thấy dữ liệu của nhóm được chuyển",
+       "Chuyển N1 từ cb.a sang cb.b (cb.b có NND_TiepNhan)",
+       "Nguồn: cb.a; Nhận: cb.b",
+       "1. lp.ttxldl chuyển N1 sang cb.b\n2. cb.b đăng nhập lại, màn (1), bấm Tìm kiếm",
+       "2. cb.b thấy tệp của 201, 79201019, 79201012, 79201017, 303",
+       "Cao"),
+    tc("PQDLTH_082 - tài khoản nguồn không còn dữ liệu của nhóm đã chuyển",
+       "cb.a sau khi N1 bị chuyển",
+       "Sau PQDLTH_081; cb.a không có nhóm nào khác",
+       "1. cb.a đăng nhập lại (hoặc thao tác nếu chưa bị đăng xuất), màn (1), bấm Tìm kiếm",
+       "1. Không còn tệp của 201, 303; bộ lọc Mã đầu mối không có 201, 303",
+       "Cao"),
+    tc("PQDLTH_083 - tài khoản nhận thiếu quyền chức năng chưa xem được dữ liệu",
+       "cb.x nhận nhóm nhưng không có NND_TiepNhan",
+       "Nhận: cb.x (đã chuyển sang TT XLDL, không có quyền chức năng Tiếp nhận dữ liệu)\nNhóm: N1",
+       "1. lp.ttxldl chuyển N1 sang cb.x\n2. Mở Phân quyền cb.x\n3. cb.x đăng nhập, truy cập URL màn (1)",
+       "2. cb.x có đủ N1 (không bị lọc bỏ)\n3. Trang lỗi 403 \"Bạn không có quyền truy cập chức năng này.\"",
+       "Cao"),
+    tc("PQDLTH_084 - quyền dữ liệu tự có hiệu lực khi được cấp quyền chức năng",
+       "Cấp NND_TiepNhan cho cb.x sau khi nhận N1",
+       "Sau PQDLTH_083",
+       "1. Cập nhật người dùng cb.x, thêm Nhóm người dùng NND_TiepNhan, Lưu\n2. cb.x mở màn (1), bấm Tìm kiếm",
+       "2. Truy cập được; thấy tệp của 201, 79201019, 79201012, 79201017, 303 mà không cần phân quyền dữ liệu lại",
+       "Cao"),
+
+    subsection("Kiểm tra phân quyền"),
+    tc_group("nút thao tác khi nhóm quyền chỉ có hành động Tìm kiếm", [
+        tc_sub("cb.a: N1 chỉ có Tìm kiếm ở tất cả chức năng", [
+            tc_item("Màn (1): nút Tiếp nhận",
+                    "1. Chọn tệp Chờ tiếp nhận của 201",
+                    "1. Nút Tiếp nhận ẩn hoàn toàn", "Cao"),
+            tc_item("Màn (1): nút Từ chối",
+                    "1. Chọn tệp Chờ tiếp nhận của 201",
+                    "1. Nút Từ chối ẩn hoàn toàn", "Cao"),
+            tc_item("Màn (3): nút Di chuyển tệp",
+                    "1. Chọn tệp phi cấu trúc Đã tiếp nhận của 201, hover nút Di chuyển tệp",
+                    "1. Nút ở trạng thái disabled, tooltip \"Bạn không có quyền thực hiện thao tác này.\"", "Cao"),
+            tc_item("Màn (3): nút Gán nhãn tệp",
+                    "1. Chọn tệp phi cấu trúc Đã tiếp nhận của 201, hover nút Gán nhãn tệp",
+                    "1. Nút ở trạng thái disabled, tooltip \"Bạn không có quyền thực hiện thao tác này.\"", "Cao"),
+        ]),
+    ]),
+    tc("PQDLTH_089 - nút thao tác khi có hành động ở tổ chức này nhưng không có ở tổ chức khác",
+       "N1 = {201; Tiếp nhận}, N2 = {303; chỉ Tìm kiếm}",
+       "N1 = {201 - Theo đầu mối; Tìm kiếm, Tiếp nhận}\nN2 = {303 - Theo đầu mối; Tìm kiếm}",
+       "1. cb.a mở màn (1), chọn tệp Chờ tiếp nhận của 303\n2. Chọn tệp Chờ tiếp nhận của 201",
+       pending("Q05", "nút Tiếp nhận khi hành động chỉ có ở một phần TCTD"),
+       "Cao"),
+    tc("PQDLTH_090 - thao tác hàng loạt trên tệp thuộc các tổ chức có quyền khác nhau",
+       "Chọn đồng thời tệp của 201 và 303 rồi Tiếp nhận",
+       "Như PQDLTH_089",
+       "1. Chọn 1 tệp Chờ tiếp nhận của 201 và 1 tệp của 303\n2. Bấm Tiếp nhận",
+       pending("Q05", "chặn toàn bộ hay xử lý một phần khi quyền hỗn hợp"),
+       "Cao"),
+    tc("PQDLTH_091 - tổ chức thuộc hai nhóm quyền với hai bộ hành động khác nhau",
+       "201 - Theo đầu mối ở N1 và 201 - Theo chi nhánh ở N2",
+       "N1 = {201 - Theo đầu mối; Tìm kiếm}\nN2 = {201 - Theo chi nhánh (Theo tất cả); Tìm kiếm, Tiếp nhận}",
+       "1. Lưu N1, N2 cho cb.a\n2. cb.a mở màn (1), chọn tệp Chờ tiếp nhận của 201 và của 79201019",
+       pending("Q01", "có cho lưu 2 nhóm và quyền hiệu lực là hợp hay giao"),
+       "Cao"),
+    tc("PQDLTH_092 - xuất Excel theo bộ lọc chỉ gồm dữ liệu trong phạm vi quyền",
+       "cb.a có N1, bộ lọc Mã đầu mối trống",
+       "N1 = {201, 303 - Theo đầu mối}",
+       "1. cb.a mở màn (1), bấm Xuất excel → Xuất theo bộ lọc\n2. Mở file tải về",
+       pending("Q23", "Xuất Excel/In có giới hạn theo phạm vi quyền không"),
+       "Cao"),
+    tc("PQDLTH_093 - truy cập trực tiếp chi tiết tệp ngoài phạm vi quyền",
+       "Dán URL Xem chi tiết tệp của 310",
+       "URL Xem chi tiết/Xử lý dữ liệu của tệp 310 (lấy từ phiên vh.qt)",
+       "1. cb.a đăng nhập, dán URL vào trình duyệt",
+       pending("Q23", "hành vi khi truy cập trực tiếp tệp ngoài phạm vi"),
+       "Cao"),
+]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# M4 — Vòng đời liên chức năng
+# ══════════════════════════════════════════════════════════════════════════════
+PRECOND_M4 = PRECOND_BASE + (
+    "- cb.a có N1 = {201, 303 - Theo đầu mối; Tiếp nhận dữ liệu: Tìm kiếm, Tiếp nhận}\n"
+    "- Ngày hiện tại khi chạy test ký hiệu là N (VD N = 30/09/2026)\n"
+)
+
+ROWS_M4 = [
+    section(SEC_BIZ),
+
+    subsection("Kiểm tra điều chuyển phòng ban tác động quyền dữ liệu"),
+    tc("PQDLTH_094 - quyền dữ liệu giữ nguyên trước ngày hiệu lực điều chuyển",
+       "Lưu và điều chuyển cb.a sang XHTD, Ngày hiệu lực = N+1",
+       "Căn cứ quyết định: QD-DC-TEST-01; File: quyet_dinh.pdf (< 10MB); Phòng chuyển đến: XHTD; Ngày hiệu lực: N+1",
+       "1. lp.ttxldl tạo yêu cầu điều chuyển cb.a, Lưu và điều chuyển, Đồng ý\n2. Ngày N: mở Phân quyền cb.a; cb.a mở màn Tiếp nhận dữ liệu",
+       "1. Yêu cầu trạng thái Chờ hiệu lực\n2. cb.a vẫn thuộc TT XLDL, vẫn có N1 và vẫn thấy tệp 201, 303",
+       "Cao"),
+    tc("PQDLTH_095 - điều chuyển có hiệu lực xóa toàn bộ quyền dữ liệu",
+       "Đến Ngày hiệu lực N+1",
+       "Sau PQDLTH_094",
+       "1. Ngày N+1 (sau khi job cập nhật chạy): Tra cứu cb.a\n2. lp.xhtd mở Phân quyền cb.a\n3. cb.a đăng nhập, mở màn Tiếp nhận dữ liệu",
+       "1. Phòng ban = XHTD; cột Phân quyền dữ liệu trống; Nhóm quyền/Nhóm người dùng gắn phòng cũ bị thu hồi; yêu cầu điều chuyển = Đã duyệt\n2. Không còn nhóm quyền dữ liệu nào\n3. Không có dữ liệu cũ (hoặc 403 nếu mất quyền chức năng do thu hồi Nhóm người dùng)",
+       "Cao"),
+    tc("PQDLTH_096 - tài khoản đang đăng nhập bị đăng xuất khi điều chuyển xóa quyền dữ liệu",
+       "cb.a đang đăng nhập tại thời điểm điều chuyển có hiệu lực",
+       "Sau PQDLTH_094; cb.a đăng nhập Chrome qua thời điểm N+1",
+       "1. Sau thời điểm job ngày N+1 chạy, cb.a thao tác trên Chrome",
+       f"1. cb.a bị đăng xuất, thông báo \"{LOGOUT_MSG}\" [Assumption Q16-A]",
+       "Cao"),
+    tc_group("quyền dữ liệu giữ nguyên khi yêu cầu điều chuyển bị từ chối", [
+        tc_sub("Cách yêu cầu điều chuyển kết thúc", [
+            tc_item("Từ chối thủ công: Gửi duyệt, Ngày hiệu lực N+1, người duyệt bấm Từ chối, Lý do \"Không đồng ý\"",
+                    "1. Tạo yêu cầu, Gửi duyệt\n2. Từ chối\n3. Mở Phân quyền cb.a",
+                    "2. Trạng thái Từ chối\n3. N1 giữ nguyên, Phòng ban TT XLDL", "Cao"),
+            tc_item("Tự động — biên: Gửi duyệt, Ngày hiệu lực = N−3 (đúng 03 ngày), chưa xử lý",
+                    "1. Kiểm tra trạng thái yêu cầu và Phân quyền cb.a sau job ngày N",
+                    "1. Chưa quá 03 ngày → yêu cầu vẫn Chờ duyệt; N1 giữ nguyên", "Cao"),
+            tc_item("Tự động — vượt biên: Gửi duyệt, Ngày hiệu lực = N−4, chưa xử lý",
+                    "1. Kiểm tra sau job ngày N",
+                    "1. Tự động Từ chối, Người phê duyệt \"—\", Lý do \"Hệ thống tự động từ chối do quá thời hạn xử lý\"; N1 giữ nguyên", "Cao"),
+        ]),
+    ]),
+    tc("PQDLTH_100 - lãnh đạo phòng mới phân quyền lại sau điều chuyển",
+       "lp.xhtd phân quyền cho cb.a",
+       "Sau PQDLTH_095; nhóm mới: 310 - Theo đầu mối; Tiếp nhận dữ liệu: Tìm kiếm",
+       "1. lp.xhtd tra cứu cb.a, Phân quyền, thêm nhóm, Lưu\n2. cb.a đăng nhập, mở màn Tiếp nhận dữ liệu",
+       "1. Lưu thành công\n2. cb.a chỉ thấy tệp 310 (nếu có quyền chức năng)",
+       "Cao"),
+    tc("PQDLTH_101 - lãnh đạo phòng cũ không còn thấy tài khoản đã điều chuyển",
+       "lp.ttxldl tra cứu cb.a sau điều chuyển",
+       "Sau PQDLTH_095",
+       "1. lp.ttxldl tra cứu Tên tài khoản = cb.a",
+       "1. \"Không tìm thấy bản ghi phù hợp\"; không mở được Phân quyền cb.a",
+       "Trung bình"),
+
+    subsection("Kiểm tra hết hiệu lực và hiệu lực lại"),
+    tc("PQDLTH_102 - hết hiệu lực không phê duyệt đăng xuất tài khoản và ẩn nút Phân quyền",
+       "Hết hiệu lực cb.a, Yêu cầu phê duyệt = Không phê duyệt",
+       "Ngày hiệu lực: N; Yêu cầu phê duyệt: Không phê duyệt",
+       "1. cb.a đăng nhập Chrome\n2. qt.m1 thực hiện Hết hiệu lực cb.a\n3. cb.a thao tác; lp.ttxldl tra cứu cb.a, mở menu Thao tác",
+       "3. cb.a bị đăng xuất khỏi mọi thiết bị; trạng thái Không hoạt động; menu không có nút Phân quyền",
+       "Cao"),
+    tc("PQDLTH_103 - quyền dữ liệu vẫn được lưu khi tài khoản không hoạt động",
+       "Kiểm tra dữ liệu quyền sau Hết hiệu lực",
+       "Sau PQDLTH_102",
+       "1. Mở Xem chi tiết cb.a; Tra cứu cb.a",
+       "1. Danh sách TCTD đã chọn vẫn có 201, 303; chip vẫn hiển thị [Assumption Q16-A]",
+       "Trung bình"),
+    tc("PQDLTH_104 - hiệu lực lại hiển thị nút Phân quyền",
+       "Hiệu lực cb.a, Không phê duyệt",
+       "Sau PQDLTH_102; Ngày hiệu lực: N; Yêu cầu phê duyệt: Không phê duyệt",
+       "1. qt.m1 thực hiện Hiệu lực cb.a\n2. lp.ttxldl tra cứu cb.a, mở menu Thao tác",
+       "2. cb.a Hoạt động; menu có nút Phân quyền",
+       "Cao"),
+    tc("PQDLTH_105 - quyền dữ liệu cũ có hiệu lực lại sau khi hiệu lực tài khoản",
+       "cb.a đăng nhập sau Hiệu lực",
+       "Sau PQDLTH_104",
+       "1. cb.a đăng nhập, mở màn Tiếp nhận dữ liệu, Tìm kiếm",
+       "1. Thấy tệp 201, 79201019, 79201012, 79201017, 303 theo N1 mà không cần phân quyền lại [Assumption Q16-A]",
+       "Cao"),
+
+    subsection("Kiểm tra thu hồi quyền chức năng và thay đổi danh mục"),
+    tc("PQDLTH_106 - thu hồi quyền chức năng chặn truy cập dù còn quyền dữ liệu",
+       "Bỏ NND_TiepNhan của cb.a",
+       "cb.a: bỏ Nhóm người dùng NND_TiepNhan; Lý do cập nhật: Thu hồi quyền test",
+       "1. Cập nhật người dùng cb.a, bỏ NND_TiepNhan, Lưu\n2. cb.a truy cập URL màn Tiếp nhận dữ liệu",
+       "2. Trang 403 \"Bạn không có quyền truy cập chức năng này.\"",
+       "Cao"),
+    tc("PQDLTH_107 - nhóm quyền dữ liệu vẫn lưu hành động của chức năng đã bị thu hồi",
+       "Mở Phân quyền cb.a sau khi bỏ NND_TiepNhan",
+       "Sau PQDLTH_106",
+       "1. lp.ttxldl mở Phân quyền cb.a",
+       "1. N1 vẫn hiển thị 201, 303 và hành động Tiếp nhận dữ liệu (Tìm kiếm, Tiếp nhận) [Assumption Q12-A]",
+       "Trung bình"),
+    tc("PQDLTH_108 - cấp lại quyền chức năng khôi phục hiển thị dữ liệu",
+       "Thêm lại NND_TiepNhan",
+       "Sau PQDLTH_106",
+       "1. Cập nhật người dùng cb.a, thêm NND_TiepNhan, Lưu\n2. cb.a mở màn Tiếp nhận dữ liệu, Tìm kiếm",
+       "2. Thấy lại tệp 201, 303 theo N1",
+       "Cao"),
+    tc("PQDLTH_109 - tổ chức tín dụng bị hủy kích hoạt vẫn còn trong nhóm quyền",
+       "Hủy kích hoạt 303 trong NV16 sau khi đã phân quyền",
+       "TCTD: 303",
+       "1. Quản trị danh mục hủy kích hoạt 303\n2. Mở Phân quyền cb.a; mở Xem chi tiết cb.a",
+       "2. N1 vẫn có 303; cột Trạng thái của 303 hiển thị trạng thái mới (Hủy kích hoạt) [Assumption Q11-A]",
+       "Trung bình"),
+    tc("PQDLTH_110 - thay đổi nhóm người dùng có hiệu lực ở lần truy vấn kế tiếp",
+       "Bỏ NND_TiepNhan khi cb.a đang mở màn Tiếp nhận dữ liệu",
+       "cb.a đang mở màn Tiếp nhận dữ liệu",
+       "1. cb.a đang ở màn (1)\n2. qt.m1 bỏ NND_TiepNhan của cb.a\n3. cb.a bấm Tìm kiếm / tải lại trang",
+       "3. Bị chặn truy cập (403) ngay ở lần truy vấn kế tiếp, không cần đăng nhập lại [Assumption Q24-A]",
+       "Trung bình"),
+    tc("PQDLTH_111 - đổi phòng ban có hiệu lực ở lần truy vấn kế tiếp",
+       "Đổi Phòng ban cb.a sang XHTD khi đang đăng nhập (tệp D10 chỉ có Phòng phụ trách TT XLDL)",
+       "cb.a: Phòng ban TT XLDL → XHTD (Cập nhật người dùng)",
+       "1. cb.a đang ở màn (1), thấy tệp D10 của 201\n2. qt.m1 cập nhật Phòng ban cb.a = XHTD\n3. cb.a bấm Tìm kiếm",
+       "3. Không còn thấy tệp D10 (Bước 1 phòng ban) ngay ở lần truy vấn kế tiếp [Assumption Q24-A]",
+       "Trung bình"),
+
+    subsection("Kiểm tra thao tác đồng thời"),
+    tc("PQDLTH_112 - hai người cùng sửa quyền dữ liệu của một tài khoản",
+       "lp.ttxldl và vh.qt cùng mở Phân quyền cb.a",
+       "Phiên A: lp.ttxldl thêm 310; Phiên B: người thứ hai có quyền Phân quyền cb.a thêm 01201500",
+       "1. A và B cùng mở màn 1 của cb.a\n2. A thêm 310, Lưu màn 1\n3. B thêm 01201500, Lưu màn 1",
+       "3. B bị chặn, thông báo dữ liệu đã được cập nhật, yêu cầu tải lại; CSDL chỉ có thay đổi của A [Assumption Q14-A]",
+       "Trung bình"),
+    tc("PQDLTH_113 - kiểm tra lại trùng khi tài khoản vừa nhận nhóm từ phiên khác",
+       "A chuyển nhóm có 201 sang cb.b trong lúc B đang thêm 201 cho cb.b",
+       "Phiên A: chuyển N1 {201 - Theo đầu mối} từ cb.a sang cb.b\nPhiên B: đang mở màn 1 cb.b, thêm nhóm {201 - Theo đầu mối}",
+       "1. B mở màn 1 cb.b, thêm nhóm 201 - Theo đầu mối, Lưu màn 2 (chưa Lưu màn 1)\n2. A chuyển N1 sang cb.b\n3. B Lưu màn 1",
+       "3. B bị chặn (ERR-005 \"Mã 201 - Theo đầu mối đã tồn tại. Vui lòng kiểm tra lại.\" hoặc thông báo dữ liệu đã thay đổi); cb.b chỉ có 1 bản ghi 201 - Theo đầu mối [Assumption Q14-A]",
+       "Trung bình"),
+]
+
+
+if __name__ == '__main__':
+    features = [
+        FeatureSpec(
+            sheet_title  = "M1-LuongVao",
+            feature_name = "Tích hợp Phân quyền dữ liệu — Luồng vào: điều kiện mở & dữ liệu nguồn",
+            feature_code = "PQDLTH-M1",
+            precondition = PRECOND_M1,
+            rows         = ROWS_M1,
+            kbnv_url     = "",
+        ),
+        FeatureSpec(
+            sheet_title  = "M2-PhienHienThi",
+            feature_name = "Tích hợp Phân quyền dữ liệu — Luồng ra: phiên & hiển thị quản lý người dùng",
+            feature_code = "PQDLTH-M2",
+            precondition = PRECOND_M2,
+            rows         = ROWS_M2,
+            kbnv_url     = "",
+        ),
+        FeatureSpec(
+            sheet_title  = "M3-HieuLucManTep",
+            feature_name = "Tích hợp Phân quyền dữ liệu — Luồng ra: hiệu lực trên màn áp dụng",
+            feature_code = "PQDLTH-M3",
+            precondition = PRECOND_M3,
+            rows         = ROWS_M3,
+            kbnv_url     = "",
+        ),
+        FeatureSpec(
+            sheet_title  = "M4-VongDoi",
+            feature_name = "Tích hợp Phân quyền dữ liệu — Vòng đời liên chức năng",
+            feature_code = "PQDLTH-M4",
+            precondition = PRECOND_M4,
+            rows         = ROWS_M4,
+            kbnv_url     = "",
+        ),
+    ]
+    generate_excel(features, OUT_PATH)
+    print(f"Done! File: {OUT_PATH}")
